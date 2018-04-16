@@ -267,6 +267,8 @@ if (window.DeviceOrientationEvent) {
     orientationSupport = false;
 }
 
+var panoramaCache = {};
+
 // Compass
 var compass = document.createElement('div');
 compass.className = 'pnlm-compass pnlm-controls pnlm-control';
@@ -283,6 +285,26 @@ if (initialConfig.firstScene) {
     mergeConfig(null);
 }
 processOptions(true);
+
+function preloadPanorama(panorama){
+    if (panoramaCache[panorama] != undefined) {
+        return;
+    }
+    var p = '';
+    if (initialConfig.basePath) {
+        p = initialConfig.basePath;
+    }
+    p = absoluteURL(panorama) ? panorama : p + panorama;
+    var xhr = new XMLHttpRequest();
+    xhr.onloadend = function() {
+        panoramaCache[panorama] = this.response;
+    };
+    xhr.open('GET', p, true);
+    xhr.responseType = 'blob';
+    xhr.setRequestHeader('Accept', 'image/*,*/*;q=0.9');
+    xhr.withCredentials = config.crossOrigin === 'use-credentials';
+    xhr.send();
+}
 
 /**
  * Initializes viewer.
@@ -379,63 +401,71 @@ function init() {
         }
 
         if (config.dynamic !== true) {
-            // Still image
-            p = absoluteURL(config.panorama) ? config.panorama : p + config.panorama;
-
-            panoImage.onload = function() {
-                window.URL.revokeObjectURL(this.src);  // Clean up
-                onImageLoad();
-            };
-
-            var xhr = new XMLHttpRequest();
-            xhr.onloadend = function() {
-                if (xhr.status != 200) {
-                    // Display error if image can't be loaded
-                    var a = document.createElement('a');
-                    a.href = encodeURI(p);
-                    a.innerHTML = a.href;
-                    anError(config.strings.fileAccessError.replace('%s', a.outerHTML));
-                }
-                var img = this.response;
-                parseGPanoXMP(img);
-                infoDisplay.load.msg.innerHTML = '';
-            };
-            xhr.onprogress = function(e) {
-                if (e.lengthComputable) {
-                    // Display progress
-                    var percent = e.loaded / e.total * 100;
-                    infoDisplay.load.lbarFill.style.width = percent + '%';
-                    var unit, numerator, denominator;
-                    if (e.total > 1e6) {
-                        unit = 'MB';
-                        numerator = (e.loaded / 1e6).toFixed(2);
-                        denominator = (e.total / 1e6).toFixed(2);
-                    } else if (e.total > 1e3) {
-                        unit = 'kB';
-                        numerator = (e.loaded / 1e3).toFixed(1);
-                        denominator = (e.total / 1e3).toFixed(1);
-                    } else {
-                        unit = 'B';
-                        numerator = e.loaded;
-                        denominator = e.total;
-                    }
-                    infoDisplay.load.msg.innerHTML = numerator + ' / ' + denominator + ' ' + unit;
-                } else {
-                    // Display loading spinner
-                    infoDisplay.load.lbox.style.display = 'block';
-                    infoDisplay.load.lbar.style.display = 'none';
-                }
-            };
-            try {
-                xhr.open('GET', p, true);
-            } catch (e) {
-                // Malformed URL
-                anError(config.strings.malformedURLError);
+            if (panoramaCache[config.panorama] != undefined) {
+                parseGPanoXMP(panoramaCache[config.panorama]);
+                panoImage.onload = function() {
+                    onImageLoad();
+                };
             }
-            xhr.responseType = 'blob';
-            xhr.setRequestHeader('Accept', 'image/*,*/*;q=0.9');
-            xhr.withCredentials = config.crossOrigin === 'use-credentials';
-            xhr.send();
+            else {
+                // Still image
+                p = absoluteURL(config.panorama) ? config.panorama : p + config.panorama;
+
+                panoImage.onload = function() {
+                    window.URL.revokeObjectURL(this.src);  // Clean up
+                    onImageLoad();
+                };
+
+                var xhr = new XMLHttpRequest();
+                xhr.onloadend = function() {
+                    if (xhr.status != 200) {
+                        // Display error if image can't be loaded
+                        var a = document.createElement('a');
+                        a.href = encodeURI(p);
+                        a.innerHTML = a.href;
+                        anError(config.strings.fileAccessError.replace('%s', a.outerHTML));
+                    }
+                    var img = this.response;
+                    parseGPanoXMP(img);
+                    infoDisplay.load.msg.innerHTML = '';
+                };
+                xhr.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        // Display progress
+                        var percent = e.loaded / e.total * 100;
+                        infoDisplay.load.lbarFill.style.width = percent + '%';
+                        var unit, numerator, denominator;
+                        if (e.total > 1e6) {
+                            unit = 'MB';
+                            numerator = (e.loaded / 1e6).toFixed(2);
+                            denominator = (e.total / 1e6).toFixed(2);
+                        } else if (e.total > 1e3) {
+                            unit = 'kB';
+                            numerator = (e.loaded / 1e3).toFixed(1);
+                            denominator = (e.total / 1e3).toFixed(1);
+                        } else {
+                            unit = 'B';
+                            numerator = e.loaded;
+                            denominator = e.total;
+                        }
+                        infoDisplay.load.msg.innerHTML = numerator + ' / ' + denominator + ' ' + unit;
+                    } else {
+                        // Display loading spinner
+                        infoDisplay.load.lbox.style.display = 'block';
+                        infoDisplay.load.lbar.style.display = 'none';
+                    }
+                };
+                try {
+                    xhr.open('GET', p, true);
+                } catch (e) {
+                    // Malformed URL
+                    anError(config.strings.malformedURLError);
+                }
+                xhr.responseType = 'blob';
+                xhr.setRequestHeader('Accept', 'image/*,*/*;q=0.9');
+                xhr.withCredentials = config.crossOrigin === 'use-credentials';
+                xhr.send();
+            }
         }
     }
 
@@ -1686,6 +1716,9 @@ function createHotSpot(hs) {
     else
         div.className += ' pnlm-hotspot pnlm-sprite pnlm-' + escapeHTML(hs.type);
 
+    var width = Math.round(initialConfig.hotSpotSize - (initialConfig.hotSpotSize * 0.8 + hs.pitch));
+    div.style.backgroundSize = initialConfig.hotSpotSize.toString() + "px " + width.toString() + "px";
+
     var span = document.createElement('span');
     if (hs.text)
         span.innerHTML = escapeHTML(hs.text);
@@ -1735,6 +1768,9 @@ function createHotSpot(hs) {
             };
             div.style.cursor = 'pointer';
             span.style.cursor = 'pointer';
+
+            // Preload scene image.
+            preloadPanorama(initialConfig.scenes[hs.sceneId].panorama);
         }
         renderContainer.appendChild(div);
     }
@@ -2205,7 +2241,10 @@ function load() {
     loaded = false;
 
     controls.load.style.display = 'none';
-    infoDisplay.load.box.style.display = 'inline';
+
+    if (initialConfig.loadingDisplay) {
+        infoDisplay.load.box.style.display = 'inline';
+    }
     init();
 }
 
