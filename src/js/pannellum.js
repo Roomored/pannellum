@@ -67,7 +67,8 @@ var config,
     externalEventListeners = {},
     specifiedPhotoSphereExcludes = [],
     update = false, // Should we update when still to render dynamic content
-    hotspotsCreated = false;
+    hotspotsCreated = false,
+    candidateClick = false;
 
 var defaultConfig = {
     hfov: 100,
@@ -741,6 +742,8 @@ function onDocumentMouseDown(event) {
 
     fireEvent('mousedown', event);
     animateInit();
+
+    candidateClick = true;
 }
 
 /**
@@ -790,6 +793,8 @@ function mouseEventToCoords(event) {
  * @param {MouseEvent} event - Document mouse move event.
  */
 function onDocumentMouseMove(event) {
+    candidateClick = false;
+
     if (isUserInteracting && loaded) {
         latestInteraction = Date.now();
         var canvas = renderer.getCanvas();
@@ -828,6 +833,43 @@ function onDocumentMouseUp(event) {
     latestInteraction = Date.now();
 
     fireEvent('mouseup', event);
+
+    if (candidateClick) {
+        var coords = mouseEventToCoords(event);
+        console.log("got a click @", coords);
+
+        var closestHotspot = null;
+        var smallestDistance = null;
+        config.hotSpots.forEach(function (hotspot) {
+            // calculate distance with boundary/wrap around conditions.
+            var distance1 = Math.sqrt(
+                Math.pow(hotspot.pitch - coords[0], 2) +
+                Math.pow(hotspot.yaw - coords[1], 2)
+            );
+            var distance2 = Math.sqrt(
+                Math.pow(hotspot.pitch - coords[0], 2) +
+                Math.pow(hotspot.yaw - (coords[1] + 360), 2)
+            );
+            var distance3 = Math.sqrt(
+                Math.pow(hotspot.pitch - coords[0], 2) +
+                Math.pow(hotspot.yaw - (coords[1] - 360), 2)
+            );
+
+            var minDistance = Math.min(distance1, distance2, distance3);
+            if (
+                closestHotspot == null ||
+                minDistance < smallestDistance
+            ) {
+                smallestDistance = minDistance;
+                closestHotspot = hotspot;
+            }
+        });
+
+        console.log("hotspot =", closestHotspot);
+        if (closestHotspot != null) {
+            closestHotspot.div.click();
+        }
+    }
 }
 
 /**
