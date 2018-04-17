@@ -834,10 +834,11 @@ function onDocumentMouseUp(event) {
 
     fireEvent('mouseup', event);
 
+    console.log("yaw =", config.yaw);
+
     if (candidateClick) {
         var coords = mouseEventToCoords(event);
-        console.log("got a click @", coords);
-
+        console.log("mouse up @", coords);
         var closestHotspot = null;
         var smallestDistance = null;
         config.hotSpots.forEach(function (hotspot) {
