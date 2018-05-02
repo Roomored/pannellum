@@ -435,21 +435,7 @@ function init() {
                         // Display progress
                         var percent = e.loaded / e.total * 100;
                         infoDisplay.load.lbarFill.style.width = percent + '%';
-                        var unit, numerator, denominator;
-                        if (e.total > 1e6) {
-                            unit = 'MB';
-                            numerator = (e.loaded / 1e6).toFixed(2);
-                            denominator = (e.total / 1e6).toFixed(2);
-                        } else if (e.total > 1e3) {
-                            unit = 'kB';
-                            numerator = (e.loaded / 1e3).toFixed(1);
-                            denominator = (e.total / 1e3).toFixed(1);
-                        } else {
-                            unit = 'B';
-                            numerator = e.loaded;
-                            denominator = e.total;
-                        }
-                        infoDisplay.load.msg.innerHTML = numerator + ' / ' + denominator + ' ' + unit;
+                        infoDisplay.load.msg.innerHTML = percent.toFixed() + '%';
                     } else {
                         // Display loading spinner
                         infoDisplay.load.lbox.style.display = 'block';
@@ -834,7 +820,7 @@ function onDocumentMouseUp(event) {
 
     fireEvent('mouseup', event);
 
-    console.log("yaw =", config.yaw);
+    console.log('"' + config.panorama + '": ' + -config.yaw.toString() + ",");
 
     if (candidateClick) {
         var coords = mouseEventToCoords(event);
