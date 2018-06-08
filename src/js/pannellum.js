@@ -268,8 +268,6 @@ if (window.DeviceOrientationEvent) {
     orientationSupport = false;
 }
 
-var panoramaCache = {};
-
 // Compass
 var compass = document.createElement('div');
 compass.className = 'pnlm-compass pnlm-controls pnlm-control';
@@ -286,26 +284,6 @@ if (initialConfig.firstScene) {
     mergeConfig(null);
 }
 processOptions(true);
-
-function preloadPanorama(panorama){
-    if (panoramaCache[panorama] != undefined) {
-        return;
-    }
-    var p = '';
-    if (initialConfig.basePath) {
-        p = initialConfig.basePath;
-    }
-    p = absoluteURL(panorama) ? panorama : p + panorama;
-    var xhr = new XMLHttpRequest();
-    xhr.onloadend = function() {
-        panoramaCache[panorama] = this.response;
-    };
-    xhr.open('GET', p, true);
-    xhr.responseType = 'blob';
-    xhr.setRequestHeader('Accept', 'image/*,*/*;q=0.9');
-    xhr.withCredentials = config.crossOrigin === 'use-credentials';
-    xhr.send();
-}
 
 /**
  * Initializes viewer.
@@ -402,15 +380,9 @@ function init() {
         }
 
         if (config.dynamic !== true) {
-            if (panoramaCache[config.panorama] != undefined) {
-                parseGPanoXMP(panoramaCache[config.panorama]);
-                panoImage.onload = function() {
-                    onImageLoad();
-                };
-            }
-            else {
+            function resolved(config_panorama) {
                 // Still image
-                p = absoluteURL(config.panorama) ? config.panorama : p + config.panorama;
+                p = absoluteURL(config_panorama) ? config_panorama : p + config_panorama;
 
                 panoImage.onload = function() {
                     window.URL.revokeObjectURL(this.src);  // Clean up
@@ -452,6 +424,17 @@ function init() {
                 xhr.setRequestHeader('Accept', 'image/*,*/*;q=0.9');
                 xhr.withCredentials = config.crossOrigin === 'use-credentials';
                 xhr.send();
+            }
+
+            if (typeof config.panorama == "function") {
+                config.panorama(config.scene).then(
+                    function success(url) {
+                        resolved(url);
+                    }
+                );
+            }
+            else {
+                resolved(config.panorama);
             }
         }
     }
@@ -699,13 +682,6 @@ function onDocumentMouseDown(event) {
     // Calculate mouse position relative to top left of viewer container
     var pos = mousePosition(event);
 
-    // Log pitch / yaw of mouse click when debugging / placing hot spots
-    if (config.hotSpotDebug) {
-        var coords = mouseEventToCoords(event);
-        console.log('Pitch: ' + coords[0] + ', Yaw: ' + coords[1] + ', Center Pitch: ' +
-            config.pitch + ', Center Yaw: ' + config.yaw + ', HFOV: ' + config.hfov);
-    }
-
     // Turn off auto-rotation if enabled
     stopAnimation();
 
@@ -820,7 +796,14 @@ function onDocumentMouseUp(event) {
 
     fireEvent('mouseup', event);
 
-    console.log('"' + config.panorama + '": ' + -config.yaw.toString() + ",");
+    // console.log('"' + config.panorama + '": ' + -config.yaw.toString() + ",");
+
+    // Log pitch / yaw of mouse click when debugging / placing hot spots
+    if (config.hotSpotDebug) {
+        var coords = mouseEventToCoords(event);
+        console.log('Center Pitch: ' + config.pitch + ', Center Yaw: ' + config.yaw + ', HFOV: ' + config.hfov);
+    }
+
 
     if (candidateClick) {
         var coords = mouseEventToCoords(event);
@@ -1745,8 +1728,9 @@ function createHotSpot(hs) {
     else
         div.className += ' pnlm-hotspot pnlm-sprite pnlm-' + escapeHTML(hs.type);
 
-    var width = Math.round(initialConfig.hotSpotSize - (initialConfig.hotSpotSize * 0.8 + hs.pitch));
-    div.style.backgroundSize = initialConfig.hotSpotSize.toString() + "px " + width.toString() + "px";
+    var height = Math.round(initialConfig.hotSpotSize - (initialConfig.hotSpotSize * 0.8 + hs.pitch));
+    height = Math.min(Math.max(10, height), initialConfig.hotSpotSize);
+    div.style.backgroundSize = initialConfig.hotSpotSize.toString() + "px " + height.toString() + "px";
 
     var span = document.createElement('span');
     if (hs.text)
@@ -1797,9 +1781,6 @@ function createHotSpot(hs) {
             };
             div.style.cursor = 'pointer';
             span.style.cursor = 'pointer';
-
-            // Preload scene image.
-            preloadPanorama(initialConfig.scenes[hs.sceneId].panorama);
         }
         renderContainer.appendChild(div);
     }
@@ -2058,7 +2039,9 @@ function processOptions(isPreview) {
             case 'autoLoad':
                 if (config[key] === true && renderer === undefined) {
                     // Show loading box
-                    infoDisplay.load.box.style.display = 'inline';
+                    if (initialConfig.loadingDisplay) {
+                        infoDisplay.load.box.style.display = 'inline';
+                    }
                     // Hide load button
                     controls.load.style.display = 'none';
                     // Initialize
