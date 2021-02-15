@@ -5,7 +5,7 @@
 
 # generate.py - A multires tile set generator for Pannellum
 # Extensions to cylindrical input and partial panoramas by David von Oheimb
-# Copyright (c) 2014-2018 Matthew Petroff
+# Copyright (c) 2014-2021 Matthew Petroff
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,10 @@ import ast
 from distutils.spawn import find_executable
 import subprocess
 
+# Allow large images (this could lead to a denial of service attack if you're
+# running this script on user-submitted images.)
+Image.MAX_IMAGE_PIXELS = None
+
 # Find external programs
 try:
     nona = find_executable('nona')
@@ -43,9 +47,17 @@ except KeyError:
     # Handle case of PATH not being set
     nona = None
 
+# Subclass parser to add explaination for semi-option nona flag
+class GenParser(argparse.ArgumentParser):
+    def error(self, message):
+        if '--nona' in message:
+            sys.stderr.write('''IMPORTANT: The location of the nona utility (from Hugin) must be specified
+           with -n, since it was not found on the PATH!\n\n''')
+        super(GenParser, self).error(message)
+
 # Parse input
-parser = argparse.ArgumentParser(description='Generate a Pannellum multires tile set from a full or partial equirectangular or cylindrical panorama.',
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser = GenParser(description='Generate a Pannellum multires tile set from a full or partial equirectangular or cylindrical panorama.',
+                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('inputFile', metavar='INPUT',
                     help='panorama to be processed')
 parser.add_argument('-C', '--cylindrical', action='store_true',
@@ -117,15 +129,18 @@ if vaov == -1:
 if args.cubeSize != 0:
     cubeSize = args.cubeSize
 else:
-    cubeSize = 8 * int(origWidth / math.pi / 8)
+    cubeSize = 8 * int((360 / haov) * origWidth / math.pi / 8)
 tileSize = min(args.tileSize, cubeSize)
 levels = int(math.ceil(math.log(float(cubeSize) / tileSize, 2))) + 1
+if round(cubeSize / 2**(levels - 2)) == tileSize:
+    levels -= 1  # Handle edge case
 origHeight = str(origHeight)
 origWidth = str(origWidth)
 origFilename = os.path.join(os.getcwd(), args.inputFile)
 extension = '.jpg'
 if args.png:
     extension = '.png'
+partialPano = True if args.haov != -1 and args.vaov != -1 else False
 colorList = ast.literal_eval(args.backgroundColor)
 colorTuple = (int(colorList[0]*255), int(colorList[1]*255), int(colorList[2]*255))
 
@@ -181,15 +196,16 @@ for f in range(0, 6):
                     lower = min(i * args.tileSize + args.tileSize, size) # min(...) not really needed
                     tile = face.crop([left, upper, right, lower])
                     if args.debug:
-                        print('level: '+ str(level) + ' tiles: '+ str(tiles) + ' tileSize: '+ str(tileSize) + 'size: '+ str(size))
+                        print('level: '+ str(level) + ' tiles: '+ str(tiles) + ' tileSize: ' + str(tileSize) + ' size: '+ str(size))
                         print('left: '+ str(left) + ' upper: '+ str(upper) + ' right: '+ str(right) + ' lower: '+ str(lower))
-                    if (tile.getcolors(1) == None): # more than just one color (the background), i.e., non-empty tile
-                        tile.load()
+                    colors = tile.getcolors(1)
+                    if not partialPano or colors == None or colors[0][1] != colorTuple:
+                        # More than just one color (the background), i.e., non-empty tile
                         if tile.mode in ('RGBA', 'LA'):
                             background = Image.new(tile.mode[:-1], tile.size, colorTuple)
                             background.paste(tile, tile.split()[-1])
                             tile = background
-                        tile.save(os.path.join(args.output, str(level), faceLetters[f] + str(i) + '_' + str(j) + extension), quality = args.quality)
+                        tile.save(os.path.join(args.output, str(level), faceLetters[f] + str(i) + '_' + str(j) + extension), quality=args.quality)
             size = int(size / 2)
 
 # Generate fallback tiles
@@ -216,19 +232,24 @@ if not args.debug:
 # Generate config file
 text = []
 text.append('{')
-text.append('    "haov": ' + str(haov)+ ',')
 text.append('    "hfov": ' + str(args.hfov)+ ',')
-text.append('    "minYaw": ' + str(-haov/2+0)+ ',')
-text.append('       "yaw": ' + str(-haov/2+args.hfov/2)+ ',')
-text.append('    "maxYaw": ' + str(+haov/2+0)+ ',')
-text.append('    "vaov": '    + str(vaov)+ ',')
-text.append('    "vOffset": ' + str(args.vOffset)+ ',')
-text.append('    "minPitch": ' + str(-vaov/2+args.vOffset)+ ',')
-text.append('       "pitch": ' + str(        args.vOffset)+ ',')
-text.append('    "maxPitch": ' + str(+vaov/2+args.vOffset)+ ',')
-text.append('    "backgroundColor": "' + args.backgroundColor+ '",')
-text.append('    "avoidShowingBackground": ' + ("true" if args.avoidbackground else "false") + ',')
-text.append('    "autoLoad": ' + ("true" if args.autoload else "false") + ',')
+if haov < 360:
+    text.append('    "haov": ' + str(haov)+ ',')
+    text.append('    "minYaw": ' + str(-haov/2+0)+ ',')
+    text.append('       "yaw": ' + str(-haov/2+args.hfov/2)+ ',')
+    text.append('    "maxYaw": ' + str(+haov/2+0)+ ',')
+if vaov < 180:
+    text.append('    "vaov": '    + str(vaov)+ ',')
+    text.append('    "vOffset": ' + str(args.vOffset)+ ',')
+    text.append('    "minPitch": ' + str(-vaov/2+args.vOffset)+ ',')
+    text.append('       "pitch": ' + str(        args.vOffset)+ ',')
+    text.append('    "maxPitch": ' + str(+vaov/2+args.vOffset)+ ',')
+if colorTuple != (0, 0, 0):
+    text.append('    "backgroundColor": "' + args.backgroundColor+ '",')
+if args.avoidbackground and (haov < 360 or vaov < 180):
+    text.append('    "avoidShowingBackground": true,')
+if args.autoload:
+    text.append('    "autoLoad": true,')
 text.append('    "type": "multires",')
 text.append('    "multiRes": {')
 text.append('        "path": "/%l/%s%y_%x",')

@@ -23,6 +23,13 @@ If set, the value is displayed as the panorama's author. If no author is
 desired, don't set this parameter.
 
 
+### `authorURL` (string)
+
+If set, the displayed author text is hyperlinked to this URL. If no author URL
+is desired, don't set this parameter. The `author` parameter must also be set
+for this parameter to have an effect.
+
+
 ### `strings` (dictionary)
 
 Allows user-facing strings to be changed / translated.
@@ -52,7 +59,8 @@ counter-clockwise, and negative is clockwise.
 
 Sets the delay, in milliseconds, to start automatically rotating the panorama
 after user activity ceases. This parameter only has an effect if the
-`autoRotate` parameter is set.
+`autoRotate` parameter is set. Before starting rotation, the viewer is panned
+to the initial pitch.
 
 
 ### `autoRotateStopDelay` (number)
@@ -73,7 +81,8 @@ a link and visit this URL if Pannellum fails to work.
 
 If set to `true`, device orientation control will be used when the panorama is
 loaded, if the device supports it. If false, device orientation control needs
-to be activated by pressing a button. Defaults to `false`.
+to be activated by pressing a button. Defaults to `false`. Note that a secure
+HTTPS connection is required for device orientation access in most browsers.
 
 
 ### `showZoomCtrl` (boolean)
@@ -90,12 +99,37 @@ If set to `false`, zooming with keyboard will be disabled. Defaults to `true`.
 
 If set to `false`, zooming with mouse wheel will be disabled. Defaults to `true`.
 Can also be set to `fullscreenonly`, in which case it is only enabled when the
-viewer is fullscreen.
+viewer is fullscreen. Can also be set to `ctrl`, in which case the `ctrl` key
+must be held down to zoom with the mouse wheel (except while the viewer is
+fullscreen); when the `ctrl` key is required for mouse wheel zooming, the use
+of `ctrl` / `shift` for zoom control is disabled.
+
+
+### `doubleClickZoom` (boolean)
+
+If set to `false`, the zoom to click location on double click function will be
+disabled. Defaults to `true`.
 
 
 ### `draggable` (boolean)
 
 If set to `false`, mouse and touch dragging is disabled. Defaults to `true`.
+
+
+### `dragConfirm` (boolean or string)
+
+If set to `false`, one finger can be used to pan viewer. Defaults to `false`.
+Can also be set to `pitch`, `yaw`, or `both`. If set to `pitch` or `both`, two
+fingers need to be used to pan vertically (except while the viewer is
+fullscreen). If set to `yaw` or `both`, two fingers need to be used to pan
+horizontally (except while the viewer is fullscreen).
+
+
+### `friction` (number)
+
+Controls the "friction" that slows down the viewer motion after it is dragged
+and released. Higher values mean the motion stops faster. Should be set
+(0.0, 1.0]; defaults to 0.15.
 
 
 ### `disableKeyboardCtrl` (boolean)
@@ -151,7 +185,16 @@ Defaults to `undefined`, so the viewer center can reach `-90` / `90`.
 ### `minHfov` and `maxHfov` (number)
 
 Sets the minimum / maximum horizontal field of view, in degrees, that the
-viewer can be set to. Defaults to `50` / `120`.
+viewer can be set to. Defaults to `50` / `120`. Unless the `multiResMinHfov`
+parameter is set to `true`, the `minHfov` parameter is ignored for
+`multires` panoramas.
+
+
+### `multiResMinHfov` (boolean)
+
+When set to `false`, the `minHfov` parameter is ignored for `multires`
+panoramas; an automatically calculated minimum horizontal field of view is used
+instead. Defaults to `false`.
 
 
 ### `compass` (boolean)
@@ -203,15 +246,23 @@ the configuration is provided via the URL; it defaults to `false` but can be
 set to `true` when using the API.
 
 
+### `targetBlank` (boolean)
+
+When `true`, `target="_blank"` is set on most hyperlinks to open them in new
+tabs. This is always `true` when using the standalone viewer since said viewer
+is often used in an `<iframe>`, where it doesn't make sense to open the link in
+the same place. Defaults to `false`.
+
+
 ### `crossOrigin` (string)
 
 This specifies the type of CORS request used and can be set to either
 `anonymous` or `use-credentials`. Defaults to `anonymous`.
 
 
-### `hotSpots` (array)
+### `hotSpots` (object)
 
-This specifies an array of hot spots that can be links to other scenes,
+This specifies a dictionary of hot spots that can be links to other scenes,
 information, or external links. Each array element has the following properties.
 
 
@@ -240,6 +291,11 @@ spot.
 
 If specified for an `info` hot spot, the hot spot links to the specified URL.
 Not applicable for `scene` hot spots.
+
+#### `attributes` (dict)
+
+Specifies URL's link attributes. If not set, the `target` attribute is set to
+`_blank`, to open link in new tab to avoid opening in viewer frame / page.
 
 #### `sceneId` (string)
 
@@ -287,6 +343,25 @@ If `clickHandlerFunc` is specified, this function is added as an event handler
 for the hot spot's `click` event. The event object and the contents of
 `clickHandlerArgs` are passed to the function as arguments.
 
+#### `draggable`
+
+If specified, the hotspot can moved using the mouse or by touch.
+
+#### `dragHandlerFunc` (function) and `dragHandlerArgs` (object)
+
+If `dragHandlerFunc` is specified, this function is added as an event handler
+when dragging of the hotspot starts and ends. The event object and the contents of
+`dragHandlerArgs` are passed to the function as arguments. Possible types of the
+event object are: `mousedown`, `pointerdown`, `touchend`, `pointerup`, `pointerleave`, 
+`mouseup`, and `mouseleave`.
+
+#### `scale` (boolean)
+
+When `true`, the hot spot is scaled to match changes in the field of view,
+relative to the initial field of view. Note that this does not account for
+changes in local image scale that occur due to distortions within the viewport.
+Defaults to `false`.
+
 ### `hotSpotDebug` (boolean)
 
 When `true`, the mouse pointer's pitch and yaw are logged to the console when
@@ -318,16 +393,18 @@ by constraining the yaw and the field-of-view. Even at the corners and edges
 of the canvas only areas actually belonging to the image
 (i.e., within [`minYaw`, `maxYaw`] and [`minPitch`, `maxPitch`]) are shown,
 thus setting the `backgroundColor` option is not needed if this option is set.
-Defaults to `false`.
+Defaults to `false`. The `minPitch` and `maxPitch` parameters must be defined
+if this option is enabled.
 
 
 ## `equirectangular` specific options
 
-### `panorama` (string)
+### `panorama` (string or HTMLImageElement or ImageData or ImageBitmap)
 
-Sets the URL to the equirectangular panorama image. This is relative to
-`basePath` if it is set, else it is relative to the location of
+If a string is passed, it sets the URL to the equirectangular panorama image. 
+This is relative to `basePath` if it is set, else it is relative to the location of
 `pannellum.htm`. An absolute URL can also be used.
+Alternatively, an already loaded image can be passed.
 
 ### `haov` (number)
 
@@ -424,6 +501,12 @@ Currently, only equirectangular dynamic content is supported.
 
 The panorama source is considered dynamic when this is set to `true`. Defaults
 to `false`. This should be set to `true` for video.
+
+### `dynamicUpdate` (boolean)
+
+For dynamic content, viewer will start automatically updating when set to
+`true`. Defaults to `false`. If the updates are controlled via the `setUpdate`
+method, as with the Video.js plugin, this should be set to `false`.
 
 
 
