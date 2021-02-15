@@ -156,7 +156,7 @@ var aboutMsg = document.createElement('span');
 aboutMsg.className = 'pnlm-about-msg';
 aboutMsg.innerHTML = '<a href="https://pannellum.org/" target="_blank">Pannellum</a>';
 uiContainer.appendChild(aboutMsg);
-dragFix.addEventListener('contextmenu', aboutMessage);
+//dragFix.addEventListener('contextmenu', aboutMessage);
 
 // Create info display
 var infoDisplay = {};
@@ -357,19 +357,32 @@ function init() {
             anError(config.strings.fileAccessError.replace('%s', a.outerHTML));
         };
 
-        for (i = 0; i < panoImage.length; i++) {
-            p = config.cubeMap[i];
-            if (p == "null") { // support partial cubemap image with explicitly empty faces
-                console.log('Will use background instead of missing cubemap face ' + i);
-                onLoad();
-            } else {
-                if (config.basePath && !absoluteURL(p)) {
-                    p = config.basePath + p;
+        function resolved(cube_map) {
+            for (i = 0; i < panoImage.length; i++) {
+                p = cube_map[i];
+                if (p == "null") { // support partial cubemap image with explicitly empty faces
+                    console.log('Will use background instead of missing cubemap face ' + i);
+                    onLoad();
+                } else {
+                    if (config.basePath && !absoluteURL(p)) {
+                        p = config.basePath + p;
+                    }
+                    panoImage[i].onload = onLoad;
+                    panoImage[i].onerror = onError;
+                    panoImage[i].src = encodeURI(p);
                 }
-                panoImage[i].onload = onLoad;
-                panoImage[i].onerror = onError;
-                panoImage[i].src = encodeURI(p);
             }
+        }
+
+        if (typeof config.cubeMap == "function") {
+            config.cubeMap(config.scene).then(
+                function success(cube_map) {
+                    resolved(cube_map);
+                }
+            );
+        }
+        else {
+            resolved(config.cubeMap);
         }
     } else if (config.type == 'multires') {
         onImageLoad();
@@ -836,7 +849,7 @@ function onDocumentMouseUp(event) {
         });
 
         console.log("hotspot =", closestHotspot);
-        if (closestHotspot != null) {
+        if (closestHotspot != null && smallestDistance < 45) {
             closestHotspot.div.click();
         }
     }
@@ -1667,17 +1680,20 @@ function renderInitCallback() {
     // Fade if specified
     if (config.sceneFadeDuration && renderer.fadeImg !== undefined) {
         renderer.fadeImg.style.opacity = 0;
-        renderer.fadeImg.style.transform = "scale(1.2, 1.2)";
-        renderer.fadeImg.style.filter = "blur(10px)";
-        animatedMove.hfov = {
-            'startTime': Date.now(),
-            'startPosition': config.hfov * 1.2,
-            'endPosition': config.hfov,
-            'duration': config.sceneFadeDuration * 0.75,
-            'callback': undefined,
-            'callbackArgs': undefined
+        // if (!config.warp) {
+        if (false) {
+            renderer.fadeImg.style.transform = "scale(1.2, 1.2)";
+            renderer.fadeImg.style.filter = "blur(10px)";
+            animatedMove.hfov = {
+                'startTime': Date.now(),
+                'startPosition': config.hfov * 1.2,
+                'endPosition': config.hfov,
+                'duration': config.sceneFadeDuration * 0.75,
+                'callback': undefined,
+                'callbackArgs': undefined
+            }
+            animateInit();
         }
-        animateInit();
 
         // Remove image
         var fadeImg = renderer.fadeImg;
@@ -1733,8 +1749,13 @@ function createHotSpot(hs) {
     div.style.backgroundSize = initialConfig.hotSpotSize.toString() + "px " + height.toString() + "px";
 
     var span = document.createElement('span');
-    if (hs.text)
+    if (hs.text) {
         span.innerHTML = escapeHTML(hs.text);
+
+        // if (hs.warp) {
+        //     span.innerHTML += '<br><i class="material-icons">send</i>';
+        // }
+    }
 
     var a;
     if (hs.video) {
@@ -1775,7 +1796,7 @@ function createHotSpot(hs) {
             div.onclick = div.ontouchend = function() {
                 if (!div.clicked) {
                     div.clicked = true;
-                    loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov);
+                    loadScene(hs.sceneId, hs.targetPitch, hs.targetYaw, hs.targetHfov, undefined, hs.warp);
                 }
                 return false;
             };
@@ -2269,7 +2290,7 @@ function load() {
  * @param {number} targetHfov - HFOV viewer should use once scene loads.
  * @param {boolean} [fadeDone] - If `true`, fade setup is skipped.
  */
-function loadScene(sceneId, targetPitch, targetYaw, targetHfov, fadeDone) {
+function loadScene(sceneId, targetPitch, targetYaw, targetHfov, fadeDone, warp) {
     loaded = false;
     animatedMove = {};
 
@@ -2284,7 +2305,7 @@ function loadScene(sceneId, targetPitch, targetYaw, targetHfov, fadeDone) {
             fadeImg.style.height = '100%';
             fadeImg.style.transition = 'all ' + (config.sceneFadeDuration / 1000) + 's';
             fadeImg.onload = function() {
-                loadScene(sceneId, targetPitch, targetYaw, targetHfov, true);
+                loadScene(sceneId, targetPitch, targetYaw, targetHfov, true, warp);
             };
             fadeImg.src = data;
             renderContainer.appendChild(fadeImg);
@@ -2331,6 +2352,9 @@ function loadScene(sceneId, targetPitch, targetYaw, targetHfov, fadeDone) {
     }
     if (workingHfov !== undefined) {
         config.hfov = workingHfov;
+    }
+    if (warp !== undefined) {
+        config.warp = warp;
     }
     fireEvent('scenechange', sceneId);
     load();
